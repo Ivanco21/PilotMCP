@@ -1,0 +1,80 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="1" ControlType="Ascon.Pilot.Pilot.Reports.PilotReport, Ascon.Pilot.Pilot, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null" Name="PilotReport" ScriptsSource="using Ascon.Pilot.ProjectionsRepository;&#xD;&#xA;using Ascon.Pilot.ClientCore.Search;&#xD;&#xA;using System.Linq;&#xD;&#xA;using System.Collections.Generic;&#xD;&#xA;using Ascon.Pilot.Core;&#xD;&#xA;using Ascon.Pilot.DataClasses;&#xD;&#xA;using Ascon.Pilot.Client.Search;&#xD;&#xA;using Ascon.Pilot.Common.Search;&#xD;&#xA;using Ascon.Pilot.Pilot.Reports;&#xD;&#xA;using DevExpress.XtraEditors;&#xD;&#xA;using DevExpress.XtraEditors.Controls;&#xD;&#xA;using DevExpress.XtraReports.UI;&#xD;&#xA;using DevExpress.XtraReports.Parameters;&#xD;&#xA;&#xD;&#xA;private ReportContext _context = new ReportContext();&#xD;&#xA;private ObjectState _state;&#xD;&#xA;&#xD;&#xA;private void PilotReport_DataSourceDemanded(object sender, System.EventArgs e) &#xD;&#xA;{&#xD;&#xA;      _context = new ReportContext();&#xD;&#xA;&#x9;var project = (RObject)Parameters[&quot;Project&quot;].Value;&#xD;&#xA;&#x9;if(project == null)&#xD;&#xA;&#x9;&#x9;throw new ReportException(&quot;Не выбран проект&quot;);&#xD;&#xA;      project = _context.GetObject(project.Id);&#xD;&#xA;&#x9;&#xD;&#xA;&#x9;titleLabel.Text = &quot;Список замороженных элементов&quot;;&#xD;&#xA;&#x9;var elementState = (Parameter)Parameters[&quot;elementState&quot;];&#xD;&#xA;&#x9;if (elementState == null)&#xD;&#xA;&#x9;&#x9;throw new ReportException(&quot;Не выбрано состояние выводимых элементов проекта&quot;);&#xD;&#xA;&#xD;&#xA;&#x9;_state = ObjectState.Frozen;&#x9;&#x9;&#xD;&#xA;&#x9;var value = (int)elementState.Value;&#xD;&#xA;&#x9;if (value == 1)&#xD;&#xA;&#x9;{&#xD;&#xA;&#x9;&#x9;titleLabel.Text = &quot;Список не замороженных элементов&quot;;&#xD;&#xA;&#x9;&#x9;_state = ObjectState.Alive;&#x9;&#x9;&#xD;&#xA;&#x9;}&#xD;&#xA;&#xD;&#xA;&#x9;LongRunning.Start(this, () =&gt; {&#xD;&#xA;&#x9;&#x9;// ...&#xD;&#xA;&#x9;&#x9;DataSource = CollectElements(project);&#xD;&#xA;&#x9;&#x9;//DataSource = context;&#xD;&#xA;&#x9;});&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;&#xD;&#xA;private void PilotReport_ParametersRequestBeforeShow(object sender, DevExpress.XtraReports.Parameters.ParametersRequestEventArgs e)&#xD;&#xA;{&#xD;&#xA;&#x9;foreach (ParameterInfo info in e.ParametersInformation) &#xD;&#xA;&#x9;{&#xD;&#xA;&#x9;      if (info.Parameter.Name == &quot;elementState&quot;) &#xD;&#xA;&#x9;&#x9;{&#xD;&#xA;&#x9;&#x9;&#x9;RadioGroup radioGroup = new RadioGroup();&#xD;&#xA;&#x9;&#x9;&#x9;radioGroup.Properties.Items.Add(new RadioGroupItem(0, &quot;замороженные элементы&quot;));&#xD;&#xA;&#x9;&#x9;&#x9;radioGroup.Properties.Items.Add(new RadioGroupItem(1, &quot;не замороженные элементы&quot;));&#xD;&#xA;&#x9;&#x9;&#x9;info.Editor = radioGroup;&#xD;&#xA;&#x9;&#x9;&#x9;radioGroup.EditValue = 1;&#xD;&#xA;&#x9;      }&#xD;&#xA;    &#x9;}&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private IEnumerable&lt;Element&gt; CollectElements(RObject parent)&#xD;&#xA;{&#xD;&#xA;&#x9;var objectsBuilder = QueryBuilder.CreateObjectQueryBuilder();&#xD;&#xA;      objectsBuilder.Must(ObjectFields.ObjectState.Be(_state));&#xD;&#xA;      var objects = _context.GetObjects(objectsBuilder, parent.Id); &#xD;&#xA;&#x9;&#xD;&#xA;&#x9;int num = 0;&#xD;&#xA;&#x9;var result = new List&lt;Element&gt;();&#xD;&#xA;&#xD;&#xA;&#x9;foreach(var obj in objects)&#xD;&#xA;&#x9;{&#xD;&#xA;&#x9;&#x9;num++;&#xD;&#xA;&#x9;&#x9;var element = new Element()&#xD;&#xA;&#x9;&#x9;{&#xD;&#xA;&#x9;&#x9;&#x9;Num = num,&#xD;&#xA;&#x9;&#x9;&#x9;Title = obj.Title,&#xD;&#xA;&#x9;&#x9;&#x9;Link = &quot;piloturi://&quot; + obj.Id&#xD;&#xA;&#x9;&#x9;};&#xD;&#xA;&#x9;&#x9;result.Add(element);&#xD;&#xA;&#x9;}&#xD;&#xA;&#x9;return result;&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;&#xD;&#xA;class Element&#xD;&#xA;{&#xD;&#xA;&#x9;public int Num { get; set; }&#xD;&#xA;&#x9;public string Title { get; set; }&#xD;&#xA;&#x9;public string Link { get; set; }&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;&#xD;&#xA;private void tableCell3_BeforePrint(object sender, System.Drawing.Printing.PrintEventArgs e) &#xD;&#xA;{&#xD;&#xA;&#x9;var cell = sender as XRTableCell;&#xD;&#xA;&#x9;if (cell == null)&#xD;&#xA;&#x9;&#x9;return;&#xD;&#xA;&#xD;&#xA;&#x9;tableCell3.NavigateUrl = tableCell2.Text;&#xD;&#xA;}" PaperKind="A4" PageWidth="827" PageHeight="1169" Version="20.1" DataSource="#Ref-0" Font="Segoe UI, 9.75pt, charSet=204">
+  <Extensions>
+    <Item1 Ref="2" Key="DataSerializationExtension" Value="PilotReportContext" />
+    <Item2 Ref="3" Key="DataEditorExtension" Value="PilotReportContext" />
+    <Item3 Ref="4" Key="ParameterEditorExtension" Value="PilotReportContext" />
+  </Extensions>
+  <Parameters>
+    <Item1 Ref="6" Description="Проект" Name="Project" Type="#Ref-5" />
+    <Item2 Ref="8" Description="Искать" ValueInfo="0" Name="elementState" Type="#Ref-7" />
+  </Parameters>
+  <Bands>
+    <Item1 Ref="9" ControlType="DetailBand" Name="Detail" HeightF="37.2916527" TextAlignment="TopLeft" Padding="0,0,0,0,100">
+      <Controls>
+        <Item1 Ref="10" ControlType="XRTable" Name="table1" TextAlignment="MiddleLeft" SizeF="626.999939,37.2916527" LocationFloat="0,0" OddStyleName="info" BorderColor="Gainsboro" Borders="Left, Right, Bottom">
+          <Rows>
+            <Item1 Ref="11" ControlType="XRTableRow" Name="tableRow1" Weight="1">
+              <Cells>
+                <Item1 Ref="12" ControlType="XRTableCell" Name="tableCell1" Weight="0.16331275343922758" Text="[Num]" TextAlignment="MiddleCenter" Font="Segoe UI, 10pt">
+                  <StylePriority Ref="13" UseFont="false" UseTextAlignment="false" />
+                </Item1>
+                <Item2 Ref="14" ControlType="XRTableCell" Name="tableCell2" Weight="0.0061919512444307788" CanGrow="false" Text="[Link]" WordWrap="false" Font="Segoe UI, 10pt" ForeColor="Black" Padding="10,0,0,0,100" Borders="Bottom" CanPublish="false">
+                  <StylePriority Ref="15" UseFont="false" UseForeColor="false" UsePadding="false" UseBorders="false" />
+                </Item2>
+                <Item3 Ref="16" ControlType="XRTableCell" Name="tableCell3" Weight="1.7716718214820348" Text="[Title]" Font="Segoe UI, 10pt, style=Underline" ForeColor="DodgerBlue" Padding="10,0,0,0,100" Borders="Right, Bottom">
+                  <Scripts Ref="17" OnBeforePrint="tableCell3_BeforePrint" />
+                  <StylePriority Ref="18" UseFont="false" UseForeColor="false" UsePadding="false" UseBorders="false" />
+                </Item3>
+              </Cells>
+            </Item1>
+          </Rows>
+          <StylePriority Ref="19" UseBorderColor="false" UseBorders="false" UseTextAlignment="false" />
+        </Item1>
+      </Controls>
+    </Item1>
+    <Item2 Ref="20" ControlType="TopMarginBand" Name="TopMargin" TextAlignment="TopLeft" Padding="0,0,0,0,100" />
+    <Item3 Ref="21" ControlType="BottomMarginBand" Name="BottomMargin" TextAlignment="TopLeft" Padding="0,0,0,0,100" />
+    <Item4 Ref="22" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="56.66666">
+      <Controls>
+        <Item1 Ref="23" ControlType="XRLabel" Name="titleLabel" Text="titleLabel" TextAlignment="MiddleCenter" SizeF="626.999939,56.66666" LocationFloat="0,0" Font="Segoe UI Light, 14pt, style=Bold" Padding="2,2,0,0,100">
+          <StylePriority Ref="24" UseFont="false" UseTextAlignment="false" />
+        </Item1>
+      </Controls>
+    </Item4>
+    <Item5 Ref="25" ControlType="PageHeaderBand" Name="PageHeader" HeightF="36.8749924">
+      <Controls>
+        <Item1 Ref="26" ControlType="XRTable" Name="table2" TextAlignment="TopCenter" SizeF="627,36.8749924" LocationFloat="0,0" Font="Segoe UI, 11.25pt, charSet=204" BorderColor="Gainsboro" Borders="All">
+          <Rows>
+            <Item1 Ref="27" ControlType="XRTableRow" Name="tableRow2" Weight="1">
+              <Cells>
+                <Item1 Ref="28" ControlType="XRTableCell" Name="tableCell4" Weight="0.25239234449760761" Text="№" TextAlignment="MiddleCenter" Font="Segoe UI Light, 14pt">
+                  <StylePriority Ref="29" UseFont="false" UseTextAlignment="false" />
+                </Item1>
+                <Item2 Ref="30" ControlType="XRTableCell" Name="tableCell5" Weight="2.7476076555023923" Text="Наименование" TextAlignment="MiddleLeft" Font="Segoe UI Light, 14pt" Padding="10,0,0,0,100" Borders="All">
+                  <StylePriority Ref="31" UseFont="false" UsePadding="false" UseBorders="false" UseTextAlignment="false" />
+                </Item2>
+              </Cells>
+            </Item1>
+          </Rows>
+          <StylePriority Ref="32" UseFont="false" UseBorderColor="false" UseBorders="false" UseTextAlignment="false" />
+        </Item1>
+      </Controls>
+    </Item5>
+  </Bands>
+  <Scripts Ref="33" OnParametersRequestBeforeShow="PilotReport_ParametersRequestBeforeShow" OnParametersRequestValueChanged="PilotReport_ParametersRequestValueChanged" OnDataSourceDemanded="PilotReport_DataSourceDemanded" OnDataSourceRowChanged="PilotReport_DataSourceRowChanged" OnAfterPrint="PilotReport_AfterPrint" />
+  <StyleSheet>
+    <Item1 Ref="34" Name="h1" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI Light, 22pt" ForeColor="255,50,177,186" BackColor="0,0,0,0" StringFormat="Near;Near;0;None;Character;Default" TextAlignment="TopLeft" />
+    <Item2 Ref="35" Name="textNormal" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI, 9.75pt, charSet=204" BorderColor="Silver" StringFormat="Near;Near;0;None;Character;Default" BorderWidthSerializable="1" />
+    <Item3 Ref="36" Name="textAccent" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI, 9.75pt, charSet=204" BackColor="WhiteSmoke" BorderColor="Silver" StringFormat="Near;Near;0;None;Character;Default" BorderWidthSerializable="1" />
+    <Item4 Ref="37" Name="info" BorderStyle="Inset" Padding="0,0,0,0,100" Font="Segoe UI, 12pt, charSet=204" ForeColor="Black" BackColor="WhiteSmoke" StringFormat="Center;Center;0;None;Character;Default" TextAlignment="MiddleCenter" />
+    <Item5 Ref="38" Name="h2" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI Light, 14pt" BorderColor="Silver" StringFormat="Near;Far;0;None;Character;Default" TextAlignment="BottomLeft" />
+    <Item6 Ref="39" Name="h3" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI Light, 13pt" BorderColor="Silver" StringFormat="Near;Far;0;None;Character;Default" TextAlignment="BottomLeft" />
+    <Item7 Ref="40" Name="textBold" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI, 9.75pt, style=Bold, charSet=204" BorderColor="Silver" StringFormat="Near;Near;0;None;Character;Default" />
+  </StyleSheet>
+  <ObjectStorage>
+    <Item1 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1" Ref="5" Content="Ascon.Pilot.Pilot.Reports.RObject" Type="System.Type" />
+    <Item2 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1" Ref="7" Content="System.Int32" Type="System.Type" />
+    <Item3 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1" Ref="0" Content="~Xtra#NULL" Type="System.Windows.Forms.BindingSource" />
+  </ObjectStorage>
+</XtraReportsLayoutSerializer>

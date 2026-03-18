@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <PILOT_SERVER_URL>http://mahach:5545</PILOT_SERVER_URL>
+      <PILOT_LOGIN>mcp</PILOT_LOGIN>
+      <PILOT_PASSWORD>mcp</PILOT_PASSWORD>
+      <PILOT_DATABASE>pilot-ice_ru</PILOT_DATABASE>
+      <PILOT_LICENSE_TYPE>103</PILOT_LICENSE_TYPE>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

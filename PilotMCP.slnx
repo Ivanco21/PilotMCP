@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="PilotMCP.csproj" />
+  <Project Path="PilotMCP.Tests/PilotMCP.Tests.csproj" />
+</Solution>

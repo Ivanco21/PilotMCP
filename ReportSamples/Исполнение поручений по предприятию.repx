@@ -1,0 +1,271 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.8.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Name="TasksByOrganisationReport" ScriptsSource="using Ascon.Pilot.ProjectionsRepository;&#xD;&#xA;using Ascon.Pilot.ClientCore.Search;&#xD;&#xA;using Ascon.Pilot.DataClasses;&#xD;&#xA;using System.Collections.Generic;&#xD;&#xA;using System.Linq;&#xD;&#xA;using Ascon.Pilot.Client.Search;&#xD;&#xA;using Ascon.Pilot.Common.Search;&#xD;&#xA;using Ascon.Pilot.Pilot.Reports;&#xD;&#xA;using DevExpress.XtraReports.Parameters;&#xD;&#xA;&#xD;&#xA;ReportContext context = new ReportContext();&#xD;&#xA;Dictionary&lt;int, ROrganisationUnit&gt; departmentsCache = new Dictionary&lt;int, ROrganisationUnit&gt;();&#xD;&#xA;&#xD;&#xA;private void PilotReport_ParametersRequestBeforeShow(object sender, DevExpress.XtraReports.Parameters.ParametersRequestEventArgs e) &#xD;&#xA;{&#xD;&#xA;&#x9;var root = context.GetOrganisationUnit(0);&#xD;&#xA;&#x9;StaticListLookUpSettings lookUpSettings = new StaticListLookUpSettings();&#xD;&#xA;&#x9;foreach(var organisation in root.Children)&#xD;&#xA;&#x9;{&#xD;&#xA;&#x9;&#x9;lookUpSettings.LookUpValues.Add(new LookUpValue(organisation.Id, organisation.Title));&#xD;&#xA;&#x9;}&#xD;&#xA;&#x9;Parameters[&quot;Organisation&quot;].LookUpSettings = lookUpSettings;&#xD;&#xA;&#x9;Parameters[&quot;Organisation&quot;].Value = lookUpSettings.LookUpValues.Select(x =&gt; x.Value).FirstOrDefault();&#xD;&#xA;&#xD;&#xA;&#x9;Parameters[&quot;From&quot;].Value = DateTime.Today.AddDays(-14);&#xD;&#xA;&#x9;Parameters[&quot;To&quot;].Value = DateTime.Today.AddDays(1).AddSeconds(-1);&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void PilotReport_DataSourceDemanded(object sender, System.EventArgs e) &#xD;&#xA;{&#xD;&#xA;&#x9;LongRunning.Start(this, () =&gt; {&#xD;&#xA;&#x9;&#x9;&#xD;&#xA;&#x9;&#x9;var organisationId = (int)Parameters[&quot;Organisation&quot;].Value;&#xD;&#xA;&#x9;&#x9;var organisation = context.GetOrganisationUnit(organisationId);&#xD;&#xA;&#x9;&#x9;FillDepartmentsCache(organisation);&#xD;&#xA;&#xD;&#xA;&#x9;&#x9;var ids = GetPositions(organisation);&#xD;&#xA;&#x9;&#x9;if(!ids.Any())&#xD;&#xA;&#x9;&#x9;&#x9;throw new Exception(&quot;В выбранном подразделении нет ни одной должности&quot;);&#xD;&#xA;&#xD;&#xA;&#x9;&#x9;var from = (DateTime)Parameters[&quot;From&quot;].Value;&#xD;&#xA;&#x9;&#x9;var to = (DateTime)Parameters[&quot;To&quot;].Value;&#xD;&#xA;&#x9;&#xD;&#xA;&#x9;&#x9;var builder = QueryBuilder.CreateEmptyQueryBuilder();&#xD;&#xA;&#x9;&#x9;builder.Must(AttributeFields.DateTime(&quot;dateOfAssignment&quot;).BeInRange(from.ToUniversalTime(), to.ToUniversalTime()));&#xD;&#xA;&#x9;&#x9;builder.Must(AttributeFields.OrgUnit(&quot;executor&quot;).BeAnyOf(ids.ToArray()));&#xD;&#xA;&#x9;&#x9;builder.MustNot(AttributeFields.State(&quot;state&quot;).Be(SystemStates.TASK_REVOKED_STATE_ID));&#xD;&#xA;&#xD;&#xA;&#x9;&#x9;context.Objects = context.GetObjects(builder);&#xD;&#xA;&#x9;&#x9;&#xD;&#xA;&#x9;&#x9;DataSource = context;&#x9;&#xD;&#xA;&#x9;});&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void Initiator_GetValue(object sender, DevExpress.XtraReports.UI.GetValueEventArgs e) {&#xD;&#xA;&#x9;e.Value = GetOrgUnitAttributeValue(e, &quot;initiator&quot;);&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void Executor_GetValue(object sender, DevExpress.XtraReports.UI.GetValueEventArgs e) {&#xD;&#xA;&#x9;e.Value = GetOrgUnitAttributeValue(e, &quot;executor&quot;);&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void IsCompleted_GetValue(object sender, DevExpress.XtraReports.UI.GetValueEventArgs e) {&#xD;&#xA;&#x9;var obj = (RObject)e.Row;&#xD;&#xA;&#x9;e.Value = obj.Attributes.ContainsKey(&quot;dateOfCompletion&quot;);&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void ExpiredDays_GetValue(object sender, DevExpress.XtraReports.UI.GetValueEventArgs e) {&#xD;&#xA;&#x9;var deadline = GetAttributeValue&lt;DateTime?&gt;(e, &quot;deadlineDate&quot;) ?? DateTime.MaxValue;&#xD;&#xA;&#x9;if(deadline == DateTime.MaxValue){&#xD;&#xA;&#x9;&#x9;e.Value = 0;&#xD;&#xA;&#x9;&#x9;return;&#xD;&#xA;&#x9;}&#xD;&#xA;&#x9;var compareToDate = GetAttributeValue&lt;DateTime?&gt;(e, &quot;dateOfCompletion&quot;) ?? DateTime.UtcNow;&#xD;&#xA;&#x9;if(compareToDate &lt; deadline){&#xD;&#xA;&#x9;&#x9;e.Value = 0;&#xD;&#xA;&#x9;&#x9;return;&#xD;&#xA;&#x9;}&#xD;&#xA;&#x9;var days = (compareToDate - deadline).Days;&#xD;&#xA;&#x9;if(days == 0)&#xD;&#xA;&#x9;&#x9;days = 1;&#xD;&#xA;&#x9;e.Value = days;&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private string GetOrgUnitAttributeValue(GetValueEventArgs e, string attributeName)&#xD;&#xA;{&#xD;&#xA;&#x9;var ids = GetAttributeValue&lt;int[]&gt;(e, attributeName);&#xD;&#xA;&#x9;var orgUnits = ids != null ? ids.Select(context.GetOrganisationUnit) : null;&#xD;&#xA;&#x9;return orgUnits != null ? string.Join(&quot;, &quot;, orgUnits.Select(x =&gt; x.Person != null ? x.Person.DisplayName : x.Title + &quot;: пользователь не назначен&quot;)) : &quot;&lt;нет данных&gt;&quot;;&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private T GetAttributeValue&lt;T&gt;(GetValueEventArgs e, string attributeName)&#xD;&#xA;{&#xD;&#xA;&#x9;var obj = (RObject)e.Row;&#xD;&#xA;&#x9;object value;&#xD;&#xA;&#x9;if(!obj.Attributes.TryGetValue(attributeName, out value))&#xD;&#xA;&#x9;&#x9;return default(T);&#xD;&#xA;&#x9;return (T)value;&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;&#xD;&#xA;private IEnumerable&lt;int&gt; GetPositions(ROrganisationUnit unit)&#xD;&#xA;{&#xD;&#xA;&#x9;return unit.IsPosition ? &#xD;&#xA;&#x9;&#x9;new[] { unit.Id } : &#xD;&#xA;&#x9;&#x9;unit.Children.SelectMany(x =&gt; GetPositions(x));&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void FillDepartmentsCache(ROrganisationUnit organisation)&#xD;&#xA;{&#xD;&#xA;&#x9;departmentsCache.Clear();&#xD;&#xA;&#x9;foreach(var department in organisation.Children)&#xD;&#xA;&#x9;{&#xD;&#xA;&#x9;&#x9;FillDepartmentsCacheRecursive(department, department);&#xD;&#xA;&#x9;}&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void FillDepartmentsCacheRecursive(ROrganisationUnit unit, ROrganisationUnit department)&#xD;&#xA;{&#xD;&#xA;&#x9;departmentsCache[unit.Id] = department;&#xD;&#xA;&#x9;foreach(var childUnit in unit.Children)&#xD;&#xA;&#x9;{&#xD;&#xA;&#x9;&#x9;FillDepartmentsCacheRecursive(childUnit, department);&#xD;&#xA;&#x9;}&#x9;&#xD;&#xA;}&#xD;&#xA;&#xD;&#xA;private void Department_GetValue(object sender, DevExpress.XtraReports.UI.GetValueEventArgs e) {&#xD;&#xA;&#x9;var task = (RObject)e.Row;&#xD;&#xA;&#x9;var executor = GetAttributeValue&lt;int[]&gt;(e, &quot;executor&quot;).First();&#xD;&#xA;&#x9;var department = departmentsCache[executor];&#xD;&#xA;&#x9;e.Value = department.Title;&#xD;&#xA;}" Bookmark="TasksByOrganisationReport" Landscape="true" Margins="80, 79, 50, 60" PaperKind="A4" PageWidth="1169" PageHeight="827" Version="20.1" DataSource="#Ref-0" Font="Segoe UI, 9.75pt, charSet=204">
+  <Extensions>
+    <Item1 Ref="2" Key="DataSerializationExtension" Value="PilotReportContext" />
+    <Item2 Ref="3" Key="DataEditorExtension" Value="PilotReportContext" />
+    <Item3 Ref="4" Key="ParameterEditorExtension" Value="PilotReportContext" />
+  </Extensions>
+  <Parameters>
+    <Item1 Ref="6" Description="От:" ValueInfo="2015-09-01" Name="From" Type="#Ref-5" />
+    <Item2 Ref="7" Description="До:" ValueInfo="2015-09-01" Name="To" Type="#Ref-5" />
+    <Item3 Ref="9" Description="Предприятие:" ValueInfo="0" Name="Organisation" Type="#Ref-8" />
+  </Parameters>
+  <CalculatedFields>
+    <Item1 Ref="10" Name="Department" FieldType="String" DataMember="Objects">
+      <Scripts Ref="11" OnGetValue="Department_GetValue" />
+    </Item1>
+    <Item2 Ref="12" Name="Initiator" FieldType="String" DataMember="Objects">
+      <Scripts Ref="13" OnGetValue="Initiator_GetValue" />
+    </Item2>
+    <Item3 Ref="14" Name="Executor" FieldType="String" DataMember="Objects">
+      <Scripts Ref="15" OnGetValue="Executor_GetValue" />
+    </Item3>
+    <Item4 Ref="16" Name="IsCompleted" FieldType="Boolean" DataMember="Objects">
+      <Scripts Ref="17" OnGetValue="IsCompleted_GetValue" />
+    </Item4>
+    <Item5 Ref="18" Name="ExpiredDays" FieldType="Int32" DataMember="Objects">
+      <Scripts Ref="19" OnGetValue="ExpiredDays_GetValue" />
+    </Item5>
+  </CalculatedFields>
+  <Bands>
+    <Item1 Ref="20" ControlType="DetailBand" Name="Detail" HeightF="0" TextAlignment="TopLeft" Padding="0,0,0,0,100" />
+    <Item2 Ref="21" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" TextAlignment="TopLeft" Padding="0,0,0,0,100" />
+    <Item3 Ref="22" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="60" TextAlignment="TopLeft" Padding="0,0,0,0,100" />
+    <Item4 Ref="23" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="75">
+      <Controls>
+        <Item1 Ref="24" ControlType="XRLabel" Name="label1" Multiline="true" Text="Исполнительская дисциплина по предприятию [Parameters.Organisation] за период c [Parameters.From!dd/MM/yyyy] г. по [Parameters.To!dd/MM/yyyy] г.&#xD;&#xA;" TextAlignment="TopLeft" SizeF="1007.99994,75" LocationFloat="0,0" StyleName="reportHeaderStyle" Font="Segoe UI, 12pt" Padding="2,2,0,0,100" />
+      </Controls>
+    </Item4>
+    <Item5 Ref="25" ControlType="PageHeaderBand" Name="PageHeader" HeightF="68.9999847" BorderColor="Silver" Borders="Bottom">
+      <Controls>
+        <Item1 Ref="26" ControlType="XRLine" Name="line1" LineWidth="3" SizeF="1007.99994,3" LocationFloat="0,65.9999847" ForeColor="Silver">
+          <StylePriority Ref="27" UseForeColor="false" />
+        </Item1>
+        <Item2 Ref="28" ControlType="XRLabel" Name="label3" CanGrow="false" Text="Всего поручений" TextAlignment="BottomCenter" SizeF="95,65.99997" LocationFloat="283,3.17891427E-05" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="29" UseBorders="false" UseTextAlignment="false" />
+        </Item2>
+        <Item3 Ref="30" ControlType="XRLabel" Name="label26" CanGrow="false" Text="&gt;15" TextAlignment="BottomCenter" SizeF="73,22" LocationFloat="675,43.9998322" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="31" UseBorders="false" UseTextAlignment="false" />
+        </Item3>
+        <Item4 Ref="32" ControlType="XRLabel" Name="label25" CanGrow="false" Text="&gt;10" TextAlignment="BottomCenter" SizeF="73,22" LocationFloat="602,43.99999" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+          <StylePriority Ref="33" UseBorders="false" UseTextAlignment="false" />
+        </Item4>
+        <Item5 Ref="34" ControlType="XRLabel" Name="label24" CanGrow="false" Text="&gt;5" TextAlignment="BottomCenter" SizeF="73,22" LocationFloat="528.999939,43.99999" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+          <StylePriority Ref="35" UseBorders="false" UseTextAlignment="false" />
+        </Item5>
+        <Item6 Ref="36" ControlType="XRLabel" Name="label23" CanGrow="false" Text="1-5 дней" TextAlignment="BottomCenter" SizeF="73,22" LocationFloat="456,43.9997978" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+          <StylePriority Ref="37" UseBorders="false" UseTextAlignment="false" />
+        </Item6>
+        <Item7 Ref="38" ControlType="XRLabel" Name="label19" Multiline="true" CanGrow="false" Text="С нарушением срока" TextAlignment="BottomCenter" SizeF="130,44" LocationFloat="878,21.9999943" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="39" UseBorders="false" UseTextAlignment="false" />
+        </Item7>
+        <Item8 Ref="40" ControlType="XRLabel" Name="label18" Multiline="true" CanGrow="false" Text="Исполняемые&#xD;&#xA;в срок" TextAlignment="BottomCenter" SizeF="130,44" LocationFloat="747.9998,21.9999943" StyleName="tableAccentStyle" Font="Segoe UI, 10pt" BackColor="WhiteSmoke" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="41" UsePadding="false" UseBorders="false" UseTextAlignment="false" />
+        </Item8>
+        <Item9 Ref="42" ControlType="XRLabel" Name="label15" Multiline="true" CanGrow="false" Text="С нарушением срока" TextAlignment="MiddleCenter" SizeF="292,22" LocationFloat="455.999817,21.9999943" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="43" UseBorders="false" UseTextAlignment="false" />
+        </Item9>
+        <Item10 Ref="44" ControlType="XRLabel" Name="label13" CanGrow="false" Text="В срок" TextAlignment="BottomCenter" SizeF="78,44" LocationFloat="378,21.9999943" StyleName="tableAccentStyle" Font="Segoe UI, 10pt" BackColor="WhiteSmoke" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="45" UseBorders="false" UseTextAlignment="false" />
+        </Item10>
+        <Item11 Ref="46" ControlType="XRLabel" Name="label9" CanGrow="false" Text="Не выполнено" TextAlignment="MiddleCenter" SizeF="260.000122,22" LocationFloat="748.000061,0" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="47" UseBorders="false" UseTextAlignment="false" />
+        </Item11>
+        <Item12 Ref="48" ControlType="XRLabel" Name="label4" CanGrow="false" Text="Выполнено" TextAlignment="MiddleCenter" SizeF="370,22" LocationFloat="378,0" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+          <StylePriority Ref="49" UseBorders="false" UseTextAlignment="false" />
+        </Item12>
+        <Item13 Ref="50" ControlType="XRLabel" Name="label2" CanGrow="false" Text="Подразделение" TextAlignment="BottomLeft" SizeF="283,66" LocationFloat="0.000127156571,0" StyleName="tableStyle" Font="Segoe UI, 10pt" BackColor="White" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom" BorderWidth="1">
+          <StylePriority Ref="51" UseBorders="false" UseBorderWidth="false" UseTextAlignment="false" />
+        </Item13>
+      </Controls>
+      <StylePriority Ref="52" UseBorderColor="false" UseBorders="false" />
+    </Item5>
+    <Item6 Ref="53" ControlType="ReportFooterBand" Name="ReportFooter" HeightF="25">
+      <Controls>
+        <Item1 Ref="54" ControlType="XRTable" Name="table2" TextAlignment="MiddleCenter" SizeF="1007.99994,25" LocationFloat="0,0" Font="Arial, 11pt, style=Bold" BackColor="LightGray" Borders="Left, Bottom">
+          <Rows>
+            <Item1 Ref="55" ControlType="XRTableRow" Name="tableRow2" Weight="1">
+              <Cells>
+                <Item1 Ref="56" ControlType="XRTableCell" Name="tableCell2" Weight="3.2215018421576933" Text="Итого по предприятию:" TextAlignment="MiddleRight" Font="Segoe UI, 10pt, style=Bold" BackColor="Transparent" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                  <StylePriority Ref="57" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" UseTextAlignment="false" />
+                </Item1>
+                <Item2 Ref="58" ControlType="XRTableCell" Name="tableCell3" Weight="1.0814228825197174" Font="Segoe UI, 10pt, style=Bold" BackColor="Transparent" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                  <Summary Ref="59" Running="Report" IgnoreNullValues="true" />
+                  <ExpressionBindings>
+                    <Item1 Ref="60" EventName="BeforePrint" PropertyName="Text" Expression="sumCount([Objects.Id])" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="61" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item2>
+                <Item3 Ref="62" ControlType="XRTableCell" Name="tableCell12" Weight="0.88790514531349252" Font="Segoe UI, 10pt, style=Bold" BackColor="WhiteSmoke" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                  <Summary Ref="63" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="64" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([Objects.IsCompleted] And [Objects.ExpiredDays] == 0, 1, 0))" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="65" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item3>
+                <Item4 Ref="66" ControlType="XRTableCell" Name="tableCell13" Weight="0.8309881546739093" Font="Segoe UI, 10pt, style=Bold" BackColor="Transparent" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+                  <Summary Ref="67" Running="Report" IgnoreNullValues="true" />
+                  <ExpressionBindings>
+                    <Item1 Ref="68" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([Objects.IsCompleted] And [Objects.ExpiredDays] Between (1, 5), 1, 0))" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="69" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item4>
+                <Item5 Ref="70" ControlType="XRTableCell" Name="tableCell14" Weight="0.8309888494614287" Font="Segoe UI, 10pt, style=Bold" BackColor="Transparent" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+                  <Summary Ref="71" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="72" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([Objects.IsCompleted] And [Objects.ExpiredDays] Between (6, 10), 1, 0))" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="73" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item5>
+                <Item6 Ref="74" ControlType="XRTableCell" Name="tableCell15" Weight="0.83098745988637746" Font="Segoe UI, 10pt, style=Bold" BackColor="Transparent" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+                  <Summary Ref="75" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="76" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([Objects.IsCompleted] And [Objects.ExpiredDays] Between (11, 15), 1, 0))" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="77" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item6>
+                <Item7 Ref="78" ControlType="XRTableCell" Name="tableCell16" Weight="0.83098676509882152" Font="Segoe UI, 10pt, style=Bold" BackColor="Transparent" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                  <Summary Ref="79" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="80" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([Objects.IsCompleted] And [Objects.ExpiredDays] &gt; 15, 1, 0))" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="81" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item7>
+                <Item8 Ref="82" ControlType="XRTableCell" Name="tableCell17" Weight="1.4798431997903283" Font="Segoe UI, 10pt, style=Bold" BackColor="WhiteSmoke" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                  <Summary Ref="83" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="84" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([Objects.IsCompleted] == False And [Objects.ExpiredDays] == 0, 1, 0))" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="85" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item8>
+                <Item9 Ref="86" ControlType="XRTableCell" Name="tableCell18" Weight="1.4798411154277331" Multiline="true" Font="Segoe UI, 10pt, style=Bold" BackColor="Transparent" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                  <Summary Ref="87" Running="Report" />
+                  <ExpressionBindings>
+                    <Item1 Ref="88" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([Objects.IsCompleted] == False And [Objects.ExpiredDays] != 0, 1, 0))" />
+                  </ExpressionBindings>
+                  <StylePriority Ref="89" UseFont="false" UseBackColor="false" UsePadding="false" UseBorderColor="false" UseBorders="false" />
+                </Item9>
+              </Cells>
+            </Item1>
+          </Rows>
+          <StylePriority Ref="90" UseFont="false" UseBackColor="false" UseBorders="false" UseTextAlignment="false" />
+        </Item1>
+      </Controls>
+      <ExpressionBindings>
+        <Item1 Ref="91" EventName="BeforePrint" PropertyName="Visible" Expression="Iif([DataSource.RowCount] = 0, False, ?)" />
+      </ExpressionBindings>
+    </Item6>
+    <Item7 Ref="92" ControlType="PageFooterBand" Name="PageFooter" HeightF="60.4166336">
+      <Controls>
+        <Item1 Ref="93" ControlType="XRPageInfo" Name="pageInfo1" PageInfo="Number" TextFormatString="Страница {0}" TextAlignment="MiddleCenter" SizeF="100,22.9999866" LocationFloat="909.9999,9.999974" StyleName="pageInfoStyle" Font="Segoe UI, 8pt" Padding="2,2,0,0,100" />
+      </Controls>
+    </Item7>
+    <Item8 Ref="94" ControlType="DetailReportBand" Name="DetailReport" Level="0" DataMember="Objects">
+      <Bands>
+        <Item1 Ref="95" ControlType="DetailBand" Name="Detail1" HeightF="60.4166336">
+          <Controls>
+            <Item1 Ref="96" ControlType="XRLabel" Name="label5" Text="В указанный период работы по предприятию не велись" TextAlignment="MiddleCenter" SizeF="1009.99988,60.4166336" LocationFloat="0.000127156571,0" StyleName="infoMessageStyle" Font="Segoe UI, 12pt" ForeColor="Gray" Padding="2,2,0,0,100" Visible="false">
+              <ExpressionBindings>
+                <Item1 Ref="97" EventName="BeforePrint" PropertyName="Visible" Expression="Iif([DataSource.RowCount] = 0, True, ?)" />
+              </ExpressionBindings>
+            </Item1>
+          </Controls>
+        </Item1>
+        <Item2 Ref="98" ControlType="GroupHeaderBand" Name="GroupHeader1" GroupUnion="WithFirstDetail" HeightF="25">
+          <GroupFields>
+            <Item1 Ref="99" FieldName="Department" />
+          </GroupFields>
+          <Controls>
+            <Item1 Ref="100" ControlType="XRTable" Name="table3" TextAlignment="MiddleCenter" SizeF="1007.99982,25" LocationFloat="0.000122070313,0" Font="Arial, 11pt" Borders="Left, Bottom">
+              <Rows>
+                <Item1 Ref="101" ControlType="XRTableRow" Name="tableRow3" Weight="1">
+                  <Cells>
+                    <Item1 Ref="102" ControlType="XRTableCell" Name="tableCell19" Weight="3.221502104324045" TextAlignment="MiddleLeft" StyleName="tableStyle" Font="Segoe UI, 10pt" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                      <ExpressionBindings>
+                        <Item1 Ref="103" EventName="BeforePrint" PropertyName="Text" Expression="[Department]" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="104" UseBorders="false" UseTextAlignment="false" />
+                    </Item1>
+                    <Item2 Ref="105" ControlType="XRTableCell" Name="tableCell20" Weight="1.081423055145575" TextAlignment="MiddleCenter" StyleName="tableStyle" Font="Segoe UI, 10pt" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                      <Summary Ref="106" Running="Group" />
+                      <ExpressionBindings>
+                        <Item1 Ref="107" EventName="BeforePrint" PropertyName="Text" Expression="sumCount([Id])" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="108" UseBorders="false" UseTextAlignment="false" />
+                    </Item2>
+                    <Item3 Ref="109" ControlType="XRTableCell" Name="tableCell21" Weight="0.887903841489047" TextAlignment="MiddleCenter" StyleName="tableAccentStyle" Font="Segoe UI, 10pt" BackColor="WhiteSmoke" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                      <Summary Ref="110" Running="Group" />
+                      <ExpressionBindings>
+                        <Item1 Ref="111" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([IsCompleted] And [ExpiredDays] == 0, 1, 0))" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="112" UseBorders="false" UseTextAlignment="false" />
+                    </Item3>
+                    <Item4 Ref="113" ControlType="XRTableCell" Name="tableCell22" Weight="0.83098824258820436" TextAlignment="MiddleCenter" StyleName="tableStyle" Font="Segoe UI, 10pt" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+                      <Summary Ref="114" Running="Group" IgnoreNullValues="true" />
+                      <ExpressionBindings>
+                        <Item1 Ref="115" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([IsCompleted] And [ExpiredDays] Between (1, 5), 1, 0))" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="116" UseBorders="false" UseTextAlignment="false" />
+                    </Item4>
+                    <Item5 Ref="117" ControlType="XRTableCell" Name="tableCell23" Weight="0.8309889380738168" TextAlignment="MiddleCenter" StyleName="tableStyle" Font="Segoe UI, 10pt" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+                      <Summary Ref="118" Running="Group" />
+                      <ExpressionBindings>
+                        <Item1 Ref="119" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([IsCompleted] And [ExpiredDays] Between (6, 10), 1, 0))" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="120" UseBorders="false" UseTextAlignment="false" />
+                    </Item5>
+                    <Item6 Ref="121" ControlType="XRTableCell" Name="tableCell24" Weight="0.83098754572504119" TextAlignment="MiddleCenter" StyleName="tableStyle" Font="Segoe UI, 10pt" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Bottom">
+                      <Summary Ref="122" Running="Group" />
+                      <ExpressionBindings>
+                        <Item1 Ref="123" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([IsCompleted] And [ExpiredDays] Between (11, 15), 1, 0))" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="124" UseBorders="false" UseTextAlignment="false" />
+                    </Item6>
+                    <Item7 Ref="125" ControlType="XRTableCell" Name="tableCell25" Weight="0.8309875436429216" TextAlignment="MiddleCenter" StyleName="tableStyle" Font="Segoe UI, 10pt" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                      <Summary Ref="126" Running="Group" />
+                      <ExpressionBindings>
+                        <Item1 Ref="127" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([IsCompleted] And [ExpiredDays] &gt; 15, 1, 0))" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="128" UseBorders="false" UseTextAlignment="false" />
+                    </Item7>
+                    <Item8 Ref="129" ControlType="XRTableCell" Name="tableCell26" Weight="1.4798427618138246" TextAlignment="MiddleCenter" StyleName="tableAccentStyle" Font="Segoe UI, 10pt" BackColor="WhiteSmoke" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                      <Summary Ref="130" Running="Group" />
+                      <ExpressionBindings>
+                        <Item1 Ref="131" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([IsCompleted] == False And [ExpiredDays] == 0, 1, 0))" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="132" UseBorders="false" UseTextAlignment="false" />
+                    </Item8>
+                    <Item9 Ref="133" ControlType="XRTableCell" Name="tableCell27" Weight="1.4798412874720925" Multiline="true" TextAlignment="MiddleCenter" StyleName="tableStyle" Font="Segoe UI, 10pt" Padding="8,8,2,2,100" BorderColor="Silver" Borders="Right, Bottom">
+                      <Summary Ref="134" Running="Group" />
+                      <ExpressionBindings>
+                        <Item1 Ref="135" EventName="BeforePrint" PropertyName="Text" Expression="sumSum(Iif([IsCompleted] == False And [ExpiredDays] != 0, 1, 0))" />
+                      </ExpressionBindings>
+                      <StylePriority Ref="136" UseBorders="false" UseTextAlignment="false" />
+                    </Item9>
+                  </Cells>
+                </Item1>
+              </Rows>
+              <StylePriority Ref="137" UseFont="false" UseBorders="false" UseTextAlignment="false" />
+            </Item1>
+          </Controls>
+          <ExpressionBindings>
+            <Item1 Ref="138" EventName="BeforePrint" PropertyName="Visible" Expression="Iif([DataSource.RowCount] = 0, False, ?)" />
+          </ExpressionBindings>
+        </Item2>
+      </Bands>
+    </Item8>
+  </Bands>
+  <Scripts Ref="139" OnParametersRequestBeforeShow="PilotReport_ParametersRequestBeforeShow" OnDataSourceDemanded="PilotReport_DataSourceDemanded" OnAfterPrint="PilotReport_AfterPrint" />
+  <StyleSheet>
+    <Item1 Ref="140" Name="reportHeaderStyle" BorderStyle="Inset" Padding="2,2,0,0,100" Font="Segoe UI, 12pt, charSet=204" StringFormat="Near;Near;0;None;Character;Default" TextAlignment="TopLeft" />
+    <Item2 Ref="141" Name="tableStyle" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI, 9.75pt, charSet=204" BorderColor="Silver" StringFormat="Near;Near;0;None;Character;Default" BorderWidthSerializable="1" />
+    <Item3 Ref="142" Name="tableAccentStyle" BorderStyle="Inset" Padding="8,8,2,2,100" Font="Segoe UI, 9.75pt, charSet=204" BackColor="WhiteSmoke" BorderColor="Silver" StringFormat="Near;Near;0;None;Character;Default" BorderWidthSerializable="1" />
+    <Item4 Ref="143" Name="pageInfoStyle" BorderStyle="Inset" Padding="2,2,0,0,100" Font="Segoe UI, 8.25pt, charSet=204" StringFormat="Center;Center;0;None;Character;Default" TextAlignment="MiddleCenter" />
+    <Item5 Ref="144" Name="infoMessageStyle" BorderStyle="Inset" Padding="2,2,0,0,100" Font="Segoe UI, 12pt, charSet=204" ForeColor="Gray" StringFormat="Center;Center;0;None;Character;Default" TextAlignment="MiddleCenter" />
+  </StyleSheet>
+  <ObjectStorage>
+    <Item1 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1" Ref="5" Content="System.DateTime" Type="System.Type" />
+    <Item2 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1" Ref="8" Content="System.Int32" Type="System.Type" />
+    <Item3 ObjectType="DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.v20.1" Ref="0" Content="~Xtra#NULL" Type="System.Windows.Forms.BindingSource" />
+  </ObjectStorage>
+</XtraReportsLayoutSerializer>
