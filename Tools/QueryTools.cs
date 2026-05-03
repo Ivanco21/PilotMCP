@@ -392,6 +392,24 @@ public class QueryTools
         return ToolResult.Ok(sb.ToString());
     }
 
+
+    [McpServerTool, Description("Получить автоматизации (AutomationConfig) их триггеры (Triggers) и C# вставки/код (CSharpCode).")]
+    public string GetAutomationConfigs()
+    {
+        var automationConfigs = _connection.Metadata.AutomationConfig;
+        string[] columns = ["name", "isPaused", "triggers", "cSharpCode",];
+
+        var (path, count) = TempFiles.WriteJsonl(automationConfigs, cnf => new Dictionary<string, object>
+        {
+            ["name"] = cnf.Name,
+            ["isPaused"] = cnf.IsPaused.ToString(),
+            ["triggers"] = cnf.Triggers,
+            ["cSharpCode"] = cnf.CSharpCode,
+        });
+
+        return ToolResult.File(path, count, columns, $"{count} всего автоматизаций");
+    }
+
     private (string path, int count) WriteObjects(IList<DObject> objects, string prefix)
     {
         return TempFiles.WriteJsonl(objects, obj => Helpers.ObjectToDict(_connection.Metadata, obj), prefix);
